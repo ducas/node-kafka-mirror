@@ -33,8 +33,24 @@ var exit = function () {
     });
 }
 
+var queue = [],
+    stop = false,
+    publish = function () {
+        var items = queue.slice(0);
+        queue = queue.slice(items.length);
+
+        if (!stop && items.length == 0) return setTimeout(publish, 100);
+
+        process.stdout.write(items.join(','));
+
+        if (queue.length == 0) consumer.commit(function () {});
+
+        if (!stop || queue.length > 0) setTimeout(publish, 100);
+
+    };
+
 consumer.on('message', function (m) {
-    console.log(m);
+    queue.push(m.value);
 });
 
 consumer.on('error', function (e) {
