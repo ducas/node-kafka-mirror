@@ -1,10 +1,13 @@
 var kafka = require('kafka-node'),
     Promise = require('promise'),
     args = require('yargs').argv,
+    bunyan = require('bunyan'),
 
-    clientId = args.clientId || 'kafka-mirror';
+    clientId = args.clientId || 'kafka-mirror',
+    logLevel = args.logLevel || 'info',
+    log = bunyan.createLogger({ name: clientId, level: logLevel }),
 
-var fromClient = new kafka.Client(args.from_zk_connect, clientId),
+    fromClient = new kafka.Client(args.from_zk_connect, clientId),
     toClient = new kafka.Client(args.to_zk_connect, clientId);
 
 var consumer = new kafka.HighLevelConsumer(
@@ -31,14 +34,15 @@ var consumer = new kafka.HighLevelConsumer(
 var producer = new kafka.HighLevelProducer(toClient, { requireAcks: 1, ackTimeoutMs: 100 });
 
 var exit = function () {
-    consumer.close(true, function () {
+    consumer.close(function () {
         var waitToExit = function () {
+            log.debug('Waiting for queue to drain...')
             if (queue.length == 0) {
                 return producer.close(function () {
                     process.exit();
                 });
             }
-            setTimeout(waitToExit, 100);
+            setTimeout(waitToExit, publishDelay);
         };
         waitToExit();
     });
@@ -46,14 +50,18 @@ var exit = function () {
 
 var queue = [],
     stop = false,
-    publishTimeout,
+    publishDelay = 100,
     publish = function () {
+        if (!stop && queue.length == 0) {
+            log.trace('Nothing to publish.');
+            return setTimeout(publish, publishDelay);
+        }
+
         var items = queue.slice(0);
-        queue = queue.slice(items.length);
+        queue.slice(items.length);
 
-        if (!stop && items.length == 0) return setTimeout(publish, 100);
+        log.trace({ items: items }, 'Publishing to destination topic...');
 
-        process.stdout.write(items.join(','));
         producer.send(
             [{
                 topic: args.to_topic,
@@ -62,22 +70,21 @@ var queue = [],
             }],
             function (e) {
                 if (e) {
-                    console.error("Error sending message to destination: " + e);
+                    log.error('Error sending message to destination: ' + e);
                     exit();
                 }
                 
-                if (queue.length == 0) consumer.commit(function () {});
+                log.trace('Publish successful.');
+                if (queue.length == 0) consumer.commit(function () { });
 
-                process.stdout.write('.');
-
-                if (!stop || queue.length > 0) setTimeout(publish, 100);
+                if (!stop || queue.length > 0) setTimeout(publish, publishDelay);
             });
 
     };
 
 producer.on('ready', function () {
     producer.createTopics([args.to_topic], false, function () {});
-    setTimeout(publish, 100);
+    setTimeout(publish, publishDelay);
 });
 
 consumer.on('message', function (m) {
@@ -85,16 +92,17 @@ consumer.on('message', function (m) {
 });
 
 consumer.on('error', function (e) {
-    console.error("Error receiving messages from source: " + e);
+    log.error('Error receiving messages from source: ' + e);
     exit();
 });
 
 consumer.on('offsetOutOfRange', function (e) {
-    console.error("Error receiving messages from source: " + e);
+    log.error('Error receiving messages from source: ' + e);
     exit();
 });
 
 process.on('SIGINT', function () {
-    console.log("Shutting down...");
+    log.info('Shutting down...');
     exit();
 });
+

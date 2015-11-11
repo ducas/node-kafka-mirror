@@ -17,6 +17,7 @@
   "author": "Ducas Francis",
   "license": "ISC",
   "dependencies": {
+    "bunyan": "^1.5.1",
     "kafka-node": "^0.2.29",
     "promise": "^7.0.4",
     "yargs": "^3.29.0"
