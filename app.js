@@ -39,6 +39,7 @@ var exit = function () {
             log.debug('Waiting for queue to drain...')
             if (queue.length == 0) {
                 return producer.close(function () {
+                    clearInterval(monitorInterval);
                     process.exit();
                 });
             }
@@ -58,7 +59,6 @@ var queue = [],
         }
 
         var items = queue.slice(0);
-        queue.slice(items.length);
 
         log.trace({ items: items }, 'Publishing to destination topic...');
 
@@ -75,9 +75,22 @@ var queue = [],
                 }
                 
                 log.trace('Publish successful.');
-                if (queue.length == 0) consumer.commit(function () { });
+                queue = queue.slice(items.length);
 
-                if (!stop || queue.length > 0) setTimeout(publish, publishDelay);
+                if (queue.length == 0) {
+                    consumer.commit(true, function (err, data) {
+                        if (err) {
+                            log.error('Failed to commit offset.');
+                            return exit();
+                        }
+
+                        log.trace('Commit succesful.');
+                        // only set the timeout again if we haven't received the stop signal
+                        // OR if we have received it and there is still stuff in the queue.
+                        if (!stop || queue.length > 0) setTimeout(publish, publishDelay);
+                    });
+                }
+                else setTimeout(publish, publishDelay)
             });
 
     },

@@ -40,5 +40,5 @@ producer.on('ready', function () {
         else {
             exit();
         }
-    }, 100);
+    }, 10);
 });
