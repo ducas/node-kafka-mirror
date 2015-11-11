@@ -80,7 +80,11 @@ var queue = [],
                 if (!stop || queue.length > 0) setTimeout(publish, publishDelay);
             });
 
-    };
+    },
+    monitor = function () {
+        log.debug({queueLength: queue.length});
+    },
+    monitorInterval = setInterval(monitor, 500);
 
 producer.on('ready', function () {
     producer.createTopics([args.to_topic], false, function () {});
