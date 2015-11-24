@@ -18,16 +18,26 @@ var consumer = require('./lib/mirror'),
             log: log,
             producer: {
                 send: function (items, callback) {
-                    db.collection(args.to_collection).insertMany(
-                        items.map(JSON.parse),
-                        callback
-                    );
+                    var operation = db.collection(collection).initializeOrderedBulkOp();
+                    items.forEach(function (i) {
+                        operation.insert(JSON.parse(i))
+                    });
+                    operation.execute(callback);
                 },
                 close: db.close
             },
             pauseOnSend: true
         });
     };
+
+if (!mongoUrl) {
+    log.error('argument to_mongo_connect not specified');
+    return 1;
+}
+if (!collection) {
+    log.error('argument to_collection not specified');
+    return 1;
+}
 
 MongoClient.connect(mongoUrl, function (err, db) {
     if (err) {
